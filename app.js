@@ -1,3 +1,4 @@
+/* mokuho app.js — updated 2026-06-26 / 追加:「気づき」カテゴリ分け＋カード(気づき/モクホ)ドラッグ並べ替え */
 /* ============================================================================
  *  モクホ（MOKUHO）— 完全オフライン版（Reactなし / バニラJS）
  *
@@ -286,7 +287,7 @@ const state = {
   soundEnabled: SoundStore.load(), // true | false
   settingsPhase: "menu",        // menu | confirmReset（設定画面内の表示フェーズ）
   mokuhoFilter: "all",          // 「モクホ」タブの絞り込み（all | favorite | カテゴリkey）
-  formDraft: { notice: "", insight: "", action: "" },
+  formDraft: { notice: "", insight: "", action: "", category: "" },
   formIndex: 0,
   continueEntryId: null,        // 「気づき」カードから続きを書いている場合の対象entry id
   selectedId: null,
@@ -324,6 +325,61 @@ function persist() { Store.save(state.entries); }
 function isEntryComplete(entry) {
   return STEPS.every((s) => (entry[s.key] || "").trim().length > 0);
 }
+
+/* 表示中エントリの抽出（render と並べ替えで同じ条件を使うため共通化） */
+function visibleNoticeEntries() {
+  return state.entries.filter((e) => !isEntryComplete(e));
+}
+function visibleMokuhoEntries() {
+  const all = state.entries.filter((e) => isEntryComplete(e));
+  const filter = state.mokuhoFilter || "all";
+  return filter === "all" ? all
+    : filter === "favorite" ? all.filter((e) => e.favorite)
+    : all.filter((e) => e.category === filter);
+}
+
+/* カード並べ替え確定：表示順(visibleIds)の from→to 移動を state.entries に反映する。
+   非表示エントリ（別タブ・別カテゴリ等）は元の絶対位置に固定し、表示分だけ並べ替える。 */
+function reorderEntriesWithinVisible(visibleIds, fromIndex, toIndex) {
+  if (fromIndex === toIndex) return;
+  const order = visibleIds.slice();
+  const [moved] = order.splice(fromIndex, 1);
+  order.splice(toIndex, 0, moved);
+  const visibleSet = new Set(visibleIds);
+  const byId = new Map(state.entries.map((e) => [e.id, e]));
+  let vi = 0;
+  state.entries = state.entries.map((e) =>
+    visibleSet.has(e.id) ? byId.get(order[vi++]) : e
+  );
+  persist();
+}
+
+/* TODO並べ替え確定 */
+function reorderTodos(entryId, fromIndex, toIndex) {
+  const entry = state.entries.find((e) => e.id === entryId);
+  if (!entry) return;
+  const todos = (entry.todos || []).slice();
+  const [moved] = todos.splice(fromIndex, 1);
+  todos.splice(toIndex, 0, moved);
+  updateEntry(entry.id, { todos });
+}
+
+/* フォーム下書き用カテゴリピッカー（記録時にカテゴリを紐付ける／任意） */
+function renderDraftCategoryPicker() {
+  const cur = state.formDraft.category || "";
+  return `
+    <div class="draft-category">
+      <div class="draft-category-label">${icon("listChecks", "icon-sm")} カテゴリ（任意）</div>
+      <div class="category-picker">
+        <button class="${!cur ? "active" : ""}" data-action="form-set-category" data-category="">未設定</button>
+        ${CATEGORIES.map((c) => `
+          <button class="${cur === c.key ? "active" : ""}" data-action="form-set-category" data-category="${c.key}">${escapeHtml(c.label)}</button>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 
 /* ============================================================================
  *  各ビューのレンダリング関数
@@ -417,7 +473,7 @@ function renderHome() {
    ホーム画面自体に「気づき（ステップ1）」の入力フォームを直接埋め込み、
    ボタンを押さずすぐに書き始められるようにしている。 */
 function renderNoticeHome() {
-  const visible = state.entries.filter((e) => !isEntryComplete(e));
+  const visible = visibleNoticeEntries();
 
   const noticeStep = STEPS[0]; // key: "notice"
   const noticeValue = state.formDraft.notice;
@@ -431,6 +487,7 @@ function renderNoticeHome() {
           <div><h2>${noticeStep.label}</h2><p>${noticeStep.hint}</p></div>
         </div>
         <textarea class="field" rows="4" placeholder="${noticeStep.placeholder}" data-action="home-notice-input">${escapeHtml(noticeValue)}</textarea>
+        ${renderDraftCategoryPicker()}
         <div class="btn-row" style="margin-top:16px;">
           <button class="btn btn-outline-mokuho" data-action="home-notice-later">${icon("rotateCcw", "icon-sm")} あとで</button>
           <button class="btn btn-notice" data-action="home-notice-next" ${canProceed ? "" : "disabled"}>
@@ -471,11 +528,8 @@ function renderNoticeHome() {
    タブ直下にカテゴリ（タグ）とお気に入りの絞り込みボタンを置き、選んだ条件の記録だけを表示する。
    ふりかえり分析への導線は設定画面に一本化したため、ここには置かない。 */
 function renderMokuhoHome() {
-  const all = state.entries.filter((e) => isEntryComplete(e));
+  const visible = visibleMokuhoEntries();
   const filter = state.mokuhoFilter || "all";
-  const visible = filter === "all" ? all
-    : filter === "favorite" ? all.filter((e) => e.favorite)
-    : all.filter((e) => e.category === filter);
 
   const filterDefs = [{ key: "all", label: "すべて" }, { key: "favorite", label: `${icon("star", "icon-sm")} お気に入り` }, ...CATEGORIES.map((c) => ({ key: c.key, label: c.label }))];
   const tagButtons = filterDefs.map((c) => `
@@ -541,9 +595,11 @@ function renderEntryList(entries, selectAction, theme) {
   // 「気づき」（未達成）「モクホ」（完了済み）一覧はどちらも横長カードで統一する。
   // 「気づき」には思考モードボタンを併設し、「モクホ」にはカテゴリバッジを表示する。
   if (theme === "notice" || theme === "mokuho") {
+    // 検索中は表示と内部配列の対応がずれるため、並べ替えハンドルは出さない。
+    const sortable = !isSearching;
     return `
       <div class="list-wide">
-        ${entries.map((e) => renderGoalCardWide(e, selectAction, theme)).join("")}
+        ${entries.map((e) => renderGoalCardWide(e, selectAction, theme, sortable)).join("")}
       </div>
     `;
   }
@@ -564,7 +620,7 @@ function renderEntryList(entries, selectAction, theme) {
    ボタンをネストするため <button> ではなく role="button" の <div> として実装する。
    「気づき」テーマの場合は右側に思考モード即時開始ボタンと削除ボタンを並べ、
    「モクホ」テーマの場合は左上にお気に入りスターを表示する。 */
-function renderGoalCardWide(entry, selectAction, theme) {
+function renderGoalCardWide(entry, selectAction, theme, sortable) {
   const title = entry.notice.trim() || "（気づき未入力）";
   const d = new Date(entry.createdAt);
   const dateLabel = `${d.getMonth() + 1}/${d.getDate()}`;
@@ -573,6 +629,12 @@ function renderGoalCardWide(entry, selectAction, theme) {
   const favBtn = theme === "mokuho" ? `
     <button class="fav-btn ${entry.favorite ? "active" : ""}" data-action="toggle-favorite" data-id="${entry.id}" aria-label="お気に入り">
       ${icon("star", "icon-sm")}
+    </button>
+  ` : "";
+
+  const dragHandle = sortable ? `
+    <button class="card-drag-handle" data-action="card-drag-handle" aria-label="並べ替え">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="8" x2="20" y2="8"/><line x1="4" y1="16" x2="20" y2="16"/></svg>
     </button>
   ` : "";
 
@@ -604,12 +666,16 @@ function renderGoalCardWide(entry, selectAction, theme) {
     </div>
   `;
 
+  const rowClass = `wide-row${sortable ? " card-sortable" : ""}`;
+  const rowData  = sortable ? ` data-card-id="${entry.id}"` : "";
+
   if (theme !== "notice") {
-    return `<div class="wide-row">${cardBody}</div>`;
+    return `<div class="${rowClass}"${rowData}>${dragHandle}${cardBody}</div>`;
   }
 
   return `
-    <div class="wide-row">
+    <div class="${rowClass}"${rowData}>
+      ${dragHandle}
       ${cardBody}
       <button class="think-btn" data-action="start-thinking-from-card" data-id="${entry.id}">
         ${icon("timer", "icon-sm")}
@@ -688,6 +754,7 @@ function renderForm() {
         </div>
         <textarea class="field" rows="5" placeholder="${step.placeholder}" data-action="form-input" autofocus>${escapeHtml(value)}</textarea>
         <div class="field-count">${filledCount} / ${STEPS.length} ステップ入力済み</div>
+        ${renderDraftCategoryPicker()}
         <div class="btn-row" style="margin-top:24px;">
           <button class="btn btn-outline-notice" data-action="form-back">${icon("arrowLeft", "icon-sm")} ${isFirst ? "やめる" : "もどる"}</button>
           <button class="btn ${isLast ? "btn-mokuho" : "btn-notice"}" data-action="form-next" ${canProceed ? "" : "disabled"}>
@@ -1486,12 +1553,47 @@ function render() {
     state.justCompletedId = null;
   }
 
-  // 詳細画面でTODOリストが表示されているなら長押しドラッグ並び替えをバインドする。
-  if (state.view === "detail") {
+  // ドラッグ並べ替えのバインド（描画ごとに対象を貼り替える）。
+  // 直前の貼り付け先（古いDOM）を必ずクリアしてから、該当ビューだけ再バインドする。
+  _drag.listEl = null;
+  _drag.cfg = null;
+
+  if (state.view === "home") {
+    const list = document.querySelector(".list-wide");
+    if (list) {
+      const theme = state.tab; // "notice" | "mokuho"
+      const searching = state.search.open && state.search.theme === theme && state.search.query.trim();
+      if (!searching) {
+        const visibleIds = (theme === "notice" ? visibleNoticeEntries() : visibleMokuhoEntries())
+          .map((e) => e.id);
+        bindDragSort({
+          listEl: list,
+          itemSelector: ".card-sortable",
+          handleSelector: "[data-action='card-drag-handle']",
+          draggingClass: "card-dragging",
+          placeholderClass: "card-placeholder",
+          flashClass: "card-flash",
+          onReorder: (from, to) => { reorderEntriesWithinVisible(visibleIds, from, to); render(); },
+        });
+      }
+    }
+  } else if (state.view === "detail") {
     const todoList = document.querySelector(".todo-list");
-    if (todoList) bindTodoDragSort(todoList);
+    if (todoList) {
+      const entryId = state.selectedId;
+      bindDragSort({
+        listEl: todoList,
+        itemSelector: ".todo-item",
+        handleSelector: "[data-action='todo-drag-handle']",
+        draggingClass: "todo-dragging",
+        placeholderClass: "todo-placeholder",
+        flashClass: "flash-highlight",
+        onReorder: (from, to) => { reorderTodos(entryId, from, to); render(); },
+      });
+    }
   }
 }
+
 
 /* ============================================================================
  *  タイマーのインターバル制御（useThinkingTimer 相当）
@@ -1702,49 +1804,30 @@ function playSound(type) {
 }
 
 /* ============================================================================
- *  TODOリスト ドラッグ並べ替え（シングルトン・FLIP方式 v2）
+ *  汎用ドラッグ並べ替えエンジン（シングルトン・FLIP方式）
  *
- *  改善点：
- *  ① ドラッグ開始閾値 12px（スクロールと並べ替えの誤検知を低減）
- *  ② 判定ゾーン：アイテム高さの上20%・下20%をバッファとして除いた
- *     「中央60%帯」に指が入ったら切り替え → 隣接アイテムへの移動が快適に
- *  ③ FLIP改良：DOM移動後に rAF 1回で transition を有効化
- *     （no-transition / transform の競合タイミングを排除）
- *  ④ ph 参照をDOMノードで直接保持 → lastPh の index ズレを根絶
+ *  TODOリストと「気づき／モクホ」カード一覧の両方で共有する。
+ *  bindDragSort(opts) で対象リストと挙動（クラス名・並べ替え確定処理）を
+ *  差し替えるだけ。document レベルのリスナーはアプリ起動時に一度だけ登録する。
  * ==========================================================================*/
-
-// シングルトン状態（モジュールスコープ・アプリ起動時に1度だけ登録）
 const _drag = {
-  listEl:      null,   // render() ごとに差し替える
-  pending:     null,   // touchstart で登録した候補アイテム
-  dragEl:      null,   // ドラッグ中アイテム（position:fixed）
-  ph:          null,   // プレースホルダー div
-  phBefore:    null,   // ph が現在「この要素の前」に入っている（DOMノード参照）
-  dragIndex:   -1,
-  startX:      0,
-  startY:      0,
-  offsetX:     0,
-  offsetY:     0,
+  cfg:       null,   // bindDragSort で差し替える設定一式
+  listEl:    null,
+  pending:   null,
+  dragEl:    null,
+  ph:        null,
+  dragIndex: -1,
+  startX: 0, startY: 0, offsetX: 0, offsetY: 0,
 };
 
-/* アイテム一覧（ドラッグ中の要素とプレースホルダーは除く） */
+/* 並べ替え対象アイテム（ドラッグ中の要素は除く） */
 function _dragItems() {
-  return _drag.listEl
-    ? Array.from(_drag.listEl.querySelectorAll(
-        ".todo-item:not(.todo-dragging)"))
-    : [];
+  if (!_drag.listEl || !_drag.cfg) return [];
+  return Array.from(_drag.listEl.querySelectorAll(
+    `${_drag.cfg.itemSelector}:not(.${_drag.cfg.draggingClass})`));
 }
 
-function _dragEntryId() {
-  if (!_drag.listEl) return null;
-  const btn = _drag.listEl.querySelector("[data-entry-id]");
-  return btn ? btn.dataset.entryId : null;
-}
-
-/* ── FLIP アニメーション ───────────────────────────────────────────────────
-   1. DOM 移動前に各要素の top を記録（First）
-   2. DOM 移動後に呼ぶ → 差分を transform で瞬時に逆適用（Invert）
-   3. rAF 1回後に transform = "" へ遷移（Play）                          */
+/* FLIP（First→Invert→Play）。snapshots=[{el, top}] を渡す。 */
 function _flip(snapshots) {
   const movers = [];
   snapshots.forEach(({ el, top: firstTop }) => {
@@ -1752,85 +1835,56 @@ function _flip(snapshots) {
     const lastTop = el.getBoundingClientRect().top;
     const dy = firstTop - lastTop;
     if (Math.abs(dy) < 0.5) return;
-    // 瞬時に逆変形（transition なし）
     el.style.transition = "none";
     el.style.transform  = `translateY(${dy}px)`;
     movers.push(el);
   });
   if (movers.length === 0) return;
-  // 次フレームで transition を復活させ 0 へ戻す
   requestAnimationFrame(() => {
-    movers.forEach((el) => {
-      el.style.transition = "";   // CSS の .todo-item transition が効く
-      el.style.transform  = "";
-    });
+    movers.forEach((el) => { el.style.transition = ""; el.style.transform = ""; });
   });
 }
 
-/* ── プレースホルダーをドラッグ位置に合わせて移動 ──────────────────────────
-   判定：指の Y がアイテムの「上端+20% ～ 下端-20%」の帯に入ったら
-   そのアイテムを「追い越した」とみなす。
-   この帯を使うことで境界線ぴったりでなくても切り替わる。              */
+/* プレースホルダーを指の位置に合わせて移動（中央ラインで切り替え） */
 function _movePh(clientY) {
   if (!_drag.ph || !_drag.listEl) return;
-
   const items = _dragItems();
-
-  // 指の Y が属するアイテムを特定
-  let target = null;   // 指がこのアイテムの上半分にいる → ph をその前に挿入
+  let target = null;
   for (const it of items) {
-    const r      = it.getBoundingClientRect();
-    const buf    = r.height * 0.20;            // 上下20%バッファ
-    const zoneTop = r.top    + buf;
-    const zoneMid = r.top    + r.height / 2;
-
-    if (clientY < zoneMid) {
-      // 指はこのアイテムの上半分（バッファ込み）
-      target = it;
-      break;
-    }
-    // 下半分：次のアイテムの判定へ
+    const r = it.getBoundingClientRect();
+    const zoneMid = r.top + r.height / 2;
+    if (clientY < zoneMid) { target = it; break; }
   }
-  // target===null なら末尾に挿入
-
-  // 変化がなければ何もしない（DOM参照比較）
   const same = target
-    ? (_drag.ph.nextSibling === target)       // ph の次が target なら位置同じ
-    : (_drag.ph === _drag.listEl.lastElementChild ||
-       !_drag.ph.nextElementSibling);
+    ? (_drag.ph.nextSibling === target)
+    : (_drag.ph === _drag.listEl.lastElementChild || !_drag.ph.nextElementSibling);
   if (same) return;
-
-  // FLIP: First 座標を記録してから DOM 移動
   const snaps = items.map((el) => ({ el, top: el.getBoundingClientRect().top }));
-  if (target) {
-    _drag.listEl.insertBefore(_drag.ph, target);
-  } else {
-    _drag.listEl.appendChild(_drag.ph);
-  }
+  if (target) _drag.listEl.insertBefore(_drag.ph, target);
+  else        _drag.listEl.appendChild(_drag.ph);
   _flip(snaps);
 }
 
-/* ── ドラッグ開始 ─────────────────────────────────────────────────────────── */
+/* ドラッグ開始 */
 function _startDrag(item, cx, cy) {
-  _drag.dragEl    = item;
+  const cfg = _drag.cfg;
+  _drag.dragEl = item;
   _drag.dragIndex = Array.from(
-    _drag.listEl.querySelectorAll(".todo-item")
+    _drag.listEl.querySelectorAll(cfg.itemSelector)
   ).indexOf(item);
 
-  const rect     = item.getBoundingClientRect();
-  _drag.offsetX  = cx - rect.left;
-  _drag.offsetY  = cy - rect.top;
+  const rect = item.getBoundingClientRect();
+  _drag.offsetX = cx - rect.left;
+  _drag.offsetY = cy - rect.top;
 
-  // プレースホルダーを元位置に挿入（まず item の直前に）
   const ph = document.createElement("div");
-  ph.className      = "todo-placeholder";
-  ph.style.height   = rect.height + "px";
-  ph.style.width    = rect.width  + "px";
+  ph.className    = cfg.placeholderClass;
+  ph.style.height = rect.height + "px";
+  ph.style.width  = rect.width  + "px";
   _drag.listEl.insertBefore(ph, item);
   _drag.ph = ph;
 
-  // item を fixed に切り替え
-  item.classList.add("todo-dragging");
+  item.classList.add(cfg.draggingClass);
   item.style.left  = rect.left  + "px";
   item.style.top   = rect.top   + "px";
   item.style.width = rect.width + "px";
@@ -1838,25 +1892,23 @@ function _startDrag(item, cx, cy) {
   document.body.classList.add("is-sorting");
 }
 
-/* ── クリーンアップ ───────────────────────────────────────────────────────── */
+/* クリーンアップ */
 function _dragCleanup() {
-  if (_drag.dragEl) {
-    _drag.dragEl.classList.remove("todo-dragging");
+  if (_drag.dragEl && _drag.cfg) {
+    _drag.dragEl.classList.remove(_drag.cfg.draggingClass);
     _drag.dragEl.style.cssText = "";
   }
   if (_drag.ph && _drag.ph.parentNode) _drag.ph.remove();
-  Object.assign(_drag, {
-    pending: null, dragEl: null, ph: null, phBefore: null, dragIndex: -1,
-  });
+  _drag.pending = null; _drag.dragEl = null; _drag.ph = null; _drag.dragIndex = -1;
   document.body.classList.remove("is-sorting");
 }
 
-/* ── document レベル イベントリスナー（アプリ起動時に1度だけ登録） ─────────── */
+/* document レベルのリスナー（アプリ起動時に1度だけ登録） */
 document.addEventListener("touchstart", (ev) => {
-  if (!_drag.listEl) return;
-  const handle = ev.target.closest("[data-action='todo-drag-handle']");
+  if (!_drag.listEl || !_drag.cfg) return;
+  const handle = ev.target.closest(_drag.cfg.handleSelector);
   if (!handle || !_drag.listEl.contains(handle)) return;
-  const item = handle.closest(".todo-item");
+  const item = handle.closest(_drag.cfg.itemSelector);
   if (!item) return;
   _dragCleanup();
   _drag.pending = item;
@@ -1866,81 +1918,55 @@ document.addEventListener("touchstart", (ev) => {
 
 document.addEventListener("touchmove", (ev) => {
   if (!_drag.pending && !_drag.dragEl) return;
-
   const cx = ev.touches[0].clientX;
   const cy = ev.touches[0].clientY;
-
   if (!_drag.dragEl) {
-    // ── 閾値判定（12px）──
     const dx = Math.abs(cx - _drag.startX);
     const dy = Math.abs(cy - _drag.startY);
-    if (dx < 12 && dy < 12) return;
+    if (dx < 12 && dy < 12) return;   // スクロールとの誤検知を抑える閾値
     _startDrag(_drag.pending, cx, cy);
     _drag.pending = null;
   }
-
-  ev.preventDefault();   // ページスクロール抑制
-
-  // ドラッグアイテムを指に追従
+  ev.preventDefault();                 // ページスクロール抑制
   _drag.dragEl.style.left = (cx - _drag.offsetX) + "px";
   _drag.dragEl.style.top  = (cy - _drag.offsetY) + "px";
-
-  // プレースホルダーを移動（判定ゾーン方式）
   _movePh(cy);
 }, { passive: false });
 
 document.addEventListener("touchend", () => {
   if (!_drag.dragEl) { _drag.pending = null; return; }
+  const cfg = _drag.cfg;
+  const fromIndex = _drag.dragIndex;
+  const allChildren = Array.from(_drag.listEl.children);
+  let toIndex = allChildren.indexOf(_drag.ph);
+  if (fromIndex < toIndex) toIndex -= 1;   // dragEl は fixed で children に残るため補正
+  _dragCleanup();
 
-  const entryId = _dragEntryId();
-  const entry   = entryId ? state.entries.find((e) => e.id === entryId) : null;
-
-  if (entry && _drag.ph && _drag.ph.parentNode) {
-    // ph の DOM 上の位置からドロップ先インデックスを計算
-    const allChildren = Array.from(_drag.listEl.children);
-    let newIndex = allChildren.indexOf(_drag.ph);
-    // dragEl は fixed なので children に含まれないが、
-    // 元のインデックスより後ろに ph があれば -1 補正
-    if (_drag.dragIndex < newIndex) newIndex -= 1;
-
-    const origIndex = _drag.dragIndex;
-    _dragCleanup();
-
-    if (newIndex !== origIndex && newIndex >= 0) {
-      const todos = (entry.todos || []).slice();
-      const [moved] = todos.splice(origIndex, 1);
-      todos.splice(newIndex, 0, moved);
-      updateEntry(entry.id, { todos });
-      playDropSound();
-      render();
-      // render() 後、移動先のアイテムにフラッシュ演出を付与
-      requestAnimationFrame(() => {
-        const items = document.querySelectorAll(".todo-item");
-        if (items[newIndex]) {
-          items[newIndex].classList.remove("flash-highlight"); // 連続操作でリセット
-          void items[newIndex].offsetWidth;                    // reflow で animation を再起動
-          items[newIndex].classList.add("flash-highlight");
-          items[newIndex].addEventListener("animationend", () => {
-            items[newIndex].classList.remove("flash-highlight");
-          }, { once: true });
-        }
-      });
-      return;
-    }
+  if (cfg && cfg.onReorder && toIndex >= 0 && toIndex !== fromIndex) {
+    cfg.onReorder(fromIndex, toIndex);     // データ更新＋persist＋render
+    playDropSound();
+    requestAnimationFrame(() => {
+      const items = document.querySelectorAll(cfg.itemSelector);
+      const el = items[toIndex];
+      if (el) {
+        el.classList.remove(cfg.flashClass);
+        void el.offsetWidth;
+        el.classList.add(cfg.flashClass);
+        el.addEventListener("animationend",
+          () => el.classList.remove(cfg.flashClass), { once: true });
+      }
+    });
   }
-
-  _dragCleanup();
-  // 順序変化なし → render は不要（画面そのまま）
 }, { passive: true });
 
-document.addEventListener("touchcancel", () => {
-  _dragCleanup();
-}, { passive: true });
+document.addEventListener("touchcancel", () => { _dragCleanup(); }, { passive: true });
 
-/* render() 後に呼ぶ：listEl 参照を差し替えるだけ */
-function bindTodoDragSort(listEl) {
-  _drag.listEl = listEl;
+/* render() 後に呼ぶ：対象リストと挙動を差し替える */
+function bindDragSort(opts) {
+  _drag.listEl = opts.listEl;
+  _drag.cfg = opts;
 }
+
 
 /* ドロップ確定音（短いポン） */
 function playDropSound() {
@@ -2514,6 +2540,17 @@ document.getElementById("root").addEventListener("click", (ev) => {
     return;
   }
 
+  // つまみのタップ（ドラッグせず指を離した場合）は何もしない
+  if (action === "card-drag-handle" || action === "todo-drag-handle") return;
+
+  // フォームのカテゴリ選択（下書きに紐付け、選んだ瞬間に反映）
+  if (action === "form-set-category") {
+    state.formDraft.category = el.dataset.category;
+    render();
+    return;
+  }
+
+
   // タイマー
   if (action === "timer-start") { timerStart(); return; }
   if (action === "timer-pause") { timerPause(); return; }
@@ -2526,7 +2563,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
     // 「気づき」の内容（state.formDraft.notice）は思考モード開始時から保持され続けているため、
     // ここで空文字に上書きせず、そのまま残す。
     // 思考モードは「なるほど」からなので、フォームも formIndex=1（なるほど）から再開する。
-    state.formDraft = { notice: state.formDraft.notice, ...state.timer.notes };
+    state.formDraft = { notice: state.formDraft.notice, category: state.formDraft.category || "", ...state.timer.notes };
     state.formIndex = 1;
     timerReset();
     navigateTo("form");
@@ -2538,7 +2575,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
     if (state.continueEntryId) {
       updateEntry(state.continueEntryId, { ...state.timer.notes });
     } else {
-      addEntry({ notice: state.formDraft.notice, ...state.timer.notes });
+      addEntry({ notice: state.formDraft.notice, category: state.formDraft.category || "", ...state.timer.notes });
     }
     state.continueEntryId = null;
     state.formDraft = { notice: "", insight: "", action: "" };
@@ -2551,7 +2588,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
   if (action === "continue-notice") {
     const entry = state.entries.find((e) => e.id === el.dataset.id);
     if (!entry) return;
-    state.formDraft = { notice: entry.notice, insight: entry.insight, action: entry.action };
+    state.formDraft = { notice: entry.notice, insight: entry.insight, action: entry.action, category: entry.category || "" };
     state.continueEntryId = entry.id;
     state.formIndex = entry.insight.trim() ? 2 : 1;
     navigateTo("form");
@@ -2564,7 +2601,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
   if (action === "start-thinking-from-card") {
     const entry = state.entries.find((e) => e.id === el.dataset.id);
     if (!entry) return;
-    state.formDraft = { notice: entry.notice, insight: entry.insight, action: entry.action };
+    state.formDraft = { notice: entry.notice, insight: entry.insight, action: entry.action, category: entry.category || "" };
     state.continueEntryId = entry.id;
     state.formIndex = 1; // 「なるほど」
     state.timer = {

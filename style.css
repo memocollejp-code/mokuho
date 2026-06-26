@@ -1,3 +1,4 @@
+/* mokuho style.css — updated 2026-06-26 / 追加: カード並べ替え＋フォームのカテゴリピッカー */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; font-weight: 700; }
 button { font-family: inherit; font-weight: 700; cursor: pointer; }
@@ -428,4 +429,46 @@ body.is-sorting { overflow: hidden; touch-action: none; }
 @keyframes particlefly {
   0% { transform: translate(-50%, -50%) scale(0.4) rotate(0deg); opacity: 1; }
   100% { transform: translate(var(--px), var(--py)) scale(1) rotate(var(--pr)); opacity: 0; }
+}
+
+/* ───────── カード並べ替え（気づき／モクホ一覧）＋フォームのカテゴリ ───────── */
+
+/* 並べ替え対象の行（FLIP用 transition。バネ感を出す） */
+.card-sortable { transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); will-change: transform; }
+
+/* ドラッグつまみ（行の左端グリップ） */
+.card-drag-handle {
+  flex-shrink: 0; align-self: stretch; display: flex; align-items: center; justify-content: center;
+  width: 30px; padding: 0; background: none; border: none;
+  color: var(--borderMuted); cursor: grab; touch-action: none; transition: color 0.12s;
+}
+.card-drag-handle:active { color: var(--fgMuted); }
+
+/* ドラッグ中の行（指に追従して浮かせる） */
+.card-sortable.card-dragging {
+  position: fixed !important; z-index: 200; pointer-events: none;
+  border-radius: 12px; opacity: 0.97;
+  box-shadow: 0 14px 40px rgba(0,0,0,0.24), 0 4px 12px rgba(0,0,0,0.12);
+  transform: scale(1.02) rotate(-0.4deg) !important;
+  transition: none !important;
+}
+
+/* 空き枠（ドラッグ元のプレースホルダー） */
+.card-placeholder {
+  border-radius: 10px; border: 2px dashed var(--borderMuted);
+  background: var(--fieldBg); opacity: 0.55; box-sizing: border-box; flex-shrink: 0;
+}
+
+/* ドロップ確定フラッシュ（一瞬リング状に光る） */
+@keyframes card-flash {
+  0%   { box-shadow: 0 0 0 3px rgba(217,122,153,0.55); }
+  100% { box-shadow: 0 0 0 0 rgba(217,122,153,0.00); }
+}
+.card-sortable.card-flash { animation: card-flash 0.7s ease-out forwards; }
+
+/* フォームのカテゴリピッカー見出し（.category-picker は既存スタイルを流用） */
+.draft-category { margin-top: 14px; }
+.draft-category-label {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.02em; color: var(--fgMuted);
 }
