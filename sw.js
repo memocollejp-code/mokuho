@@ -6,14 +6,14 @@
  *  バージョンを上げるたびに CACHE_NAME を変更すると古いキャッシュが自動削除される。
  * ==========================================================================*/
 
-const CACHE_NAME = "mokuho-v1";
+const CACHE_NAME = "mokuho-v2";
 
 // インストール時にキャッシュするファイル一覧
 const ASSETS = [
   "./",
   "./index.html",
-  "./style.css",
-  "./app.js",
+  "./src/notes/style.css",
+  "./src/notes/app.js",
   "./icon.png",
   "./icon-180.png",
   "./icon-192.png",
