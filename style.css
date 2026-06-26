@@ -1,4 +1,4 @@
-/* mokuho style.css — updated 2026-06-26 / 追加: カード並べ替え＋フォームのカテゴリピッカー */
+/* mokuho style.css — updated 2026-06-27 / 追加: カード並べ替え＋カテゴリピッカー＋未達成カード本文拡大＆長押しアクションシート */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; font-weight: 700; }
 button { font-family: inherit; font-weight: 700; cursor: pointer; }
@@ -472,3 +472,15 @@ body.is-sorting { overflow: hidden; touch-action: none; }
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 800; letter-spacing: 0.02em; color: var(--fgMuted);
 }
+
+/* ───────── 未達成カード：本文拡大＋長押しアクションメニュー ───────── */
+/* カード本体は長押しメニュー用にテキスト選択/コールアウトを抑止 */
+.card-wide { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+/* 未達成カードは思考/削除ボタンを行から外した分、本文を3行まで表示（横幅も広がる） */
+.card-wide.card-notice .title { -webkit-line-clamp: 3; }
+
+/* 長押しで出るアクションメニュー（既存モーダルを流用） */
+.card-action-sheet { display: flex; flex-direction: column; gap: 10px; }
+.card-action-sheet .sheet-title { font-weight: 800; font-size: 14px; color: var(--fg); line-height: 1.5;
+  margin: 0 0 2px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card-action-sheet .btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

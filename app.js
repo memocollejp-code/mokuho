@@ -1,4 +1,4 @@
-/* mokuho app.js — updated 2026-06-26 / 追加:「気づき」カテゴリ分け＋カード(気づき/モクホ)ドラッグ並べ替え */
+/* mokuho app.js — updated 2026-06-27 / 追加: カテゴリ分け＋カード並べ替え＋未達成カードの本文拡大＆長押しメニュー(思考/削除) */
 /* ============================================================================
  *  モクホ（MOKUHO）— 完全オフライン版（Reactなし / バニラJS）
  *
@@ -298,6 +298,7 @@ const state = {
   search: { open: false, query: "", theme: null }, // 全体検索（気づき／モクホ共通）のオーバーレイ状態
   selectedDay: null,
   noticeDeleteTargetId: null,   // 未達成「気づき」カードの削除確認モーダル対象id（nullなら非表示）
+  cardMenuId: null,             // 未達成カードを長押しして出すアクションメニュー対象id（nullなら非表示）
   categoryDraft: { mode: "idle", key: null, label: "" }, // カテゴリ管理画面の追加/編集フォーム状態
   justCompletedId: null,        // 直前に「一歩」まで入力して完了した記録のid（完了演出トリガー用）
   // 初回起動時オーバーレイ表示のスライド式チュートリアル。
@@ -511,6 +512,22 @@ function renderNoticeHome() {
     </div>
   ` : "";
 
+  const cardMenu = state.cardMenuId ? (() => {
+    const e = state.entries.find((x) => x.id === state.cardMenuId);
+    if (!e) return "";
+    const t = (e.notice || "").trim() || "（気づき未入力）";
+    return `
+    <div class="modal-overlay" data-action="modal-overlay-cancel" data-cancel-action="card-menu-cancel">
+      <div class="modal-card card-action-sheet">
+        <div class="sheet-title">${escapeHtml(t)}</div>
+        <button class="btn btn-notice" data-action="start-thinking-from-card" data-id="${e.id}">${icon("timer", "icon-sm")} 思考モード</button>
+        <button class="btn" style="background:#d9534f;color:#fff;border-color:#d9534f;" data-action="notice-ask-delete" data-id="${e.id}">${icon("trash2", "icon-sm")} 削除</button>
+        <button class="btn btn-outline-mokuho" data-action="card-menu-cancel">閉じる</button>
+      </div>
+    </div>
+    `;
+  })() : "";
+
   return `
     <div class="fade-in" style="margin-top:12px;display:flex;flex-direction:column;flex:1;">
       ${homeNoticeForm}
@@ -520,6 +537,7 @@ function renderNoticeHome() {
         <div style="padding:16px 0;">${renderEntryList(visible, "continue-notice", "notice")}</div>
       </div>
       ${deleteModal}
+      ${cardMenu}
     </div>
   `;
 }
@@ -639,7 +657,7 @@ function renderGoalCardWide(entry, selectAction, theme, sortable) {
   ` : "";
 
   const cardBody = `
-    <div class="card-wide ${themeClass}" data-action="${selectAction}" data-id="${entry.id}" role="button" tabindex="0">
+    <div class="card-wide ${themeClass}"${theme === "notice" ? ' data-lp="1"' : ""} data-action="${selectAction}" data-id="${entry.id}" role="button" tabindex="0">
       ${tagBadge}
       ${favBtn}
       <div class="date">${dateLabel}</div>
@@ -669,23 +687,8 @@ function renderGoalCardWide(entry, selectAction, theme, sortable) {
   const rowClass = `wide-row${sortable ? " card-sortable" : ""}`;
   const rowData  = sortable ? ` data-card-id="${entry.id}"` : "";
 
-  if (theme !== "notice") {
-    return `<div class="${rowClass}"${rowData}>${dragHandle}${cardBody}</div>`;
-  }
-
-  return `
-    <div class="${rowClass}"${rowData}>
-      ${dragHandle}
-      ${cardBody}
-      <button class="think-btn" data-action="start-thinking-from-card" data-id="${entry.id}">
-        ${icon("timer", "icon-sm")}
-        <span class="lbl">思考<br/>モード</span>
-      </button>
-      <button class="delete-btn" data-action="notice-ask-delete" data-id="${entry.id}" aria-label="削除">
-        ${icon("trash2", "icon-sm")}
-      </button>
-    </div>
-  `;
+  // 思考/削除ボタンは行から外し、未達成カードは「長押し」でアクションメニューを出す（本文の表示領域を最大化）。
+  return `<div class="${rowClass}"${rowData}>${dragHandle}${cardBody}</div>`;
 }
 
 function renderGoalCard(entry, selectAction, theme) {
@@ -1967,6 +1970,57 @@ function bindDragSort(opts) {
   _drag.cfg = opts;
 }
 
+/* ============================================================================
+ *  未達成カードの「長押し」でアクションメニュー（思考モード/削除）を出す
+ *
+ *  ・行からは思考/削除ボタンを外し、本文の表示領域を最大化している。
+ *  ・カード本体(.card-wide[data-lp='1'])を一定時間押し続けると state.cardMenuId を立てて
+ *    モーダルのアクションシートを表示する（ドラッグつまみ上は対象外＝並べ替え優先）。
+ *  ・長押し成立直後に発火する click はメニューが即閉じしないよう握り潰す。
+ * ==========================================================================*/
+const _lp = { timer: null, sx: 0, sy: 0, target: null, fired: false };
+const LP_DELAY = 480; // 長押し判定(ms)
+
+function _lpClear() {
+  if (_lp.timer) { clearTimeout(_lp.timer); _lp.timer = null; }
+  _lp.target = null;
+}
+
+document.addEventListener("touchstart", (ev) => {
+  _lp.fired = false;
+  const card = ev.target.closest(".card-wide[data-lp='1']");
+  if (!card) { _lpClear(); return; }
+  if (ev.target.closest(".card-drag-handle")) return; // つまみはドラッグ優先
+  _lp.target = card;
+  _lp.sx = ev.touches[0].clientX;
+  _lp.sy = ev.touches[0].clientY;
+  if (_lp.timer) clearTimeout(_lp.timer);
+  _lp.timer = setTimeout(() => {
+    if (!_lp.target) return;
+    _lp.fired = true;
+    state.cardMenuId = _lp.target.getAttribute("data-id");
+    _lpClear();
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) {} }
+    render();
+  }, LP_DELAY);
+}, { passive: true });
+
+document.addEventListener("touchmove", (ev) => {
+  if (!_lp.target) return;
+  const dx = Math.abs(ev.touches[0].clientX - _lp.sx);
+  const dy = Math.abs(ev.touches[0].clientY - _lp.sy);
+  if (dx > 10 || dy > 10) _lpClear(); // スクロール/ドラッグ開始ならキャンセル
+}, { passive: true });
+
+document.addEventListener("touchend", () => { _lpClear(); }, { passive: true });
+document.addEventListener("touchcancel", () => { _lpClear(); _lp.fired = false; }, { passive: true });
+
+// 長押し直後の click を握り潰す（capture段で #root の委譲より先に処理）
+document.addEventListener("click", (ev) => {
+  if (_lp.fired) { _lp.fired = false; ev.stopPropagation(); ev.preventDefault(); }
+}, true);
+
+
 
 /* ドロップ確定音（短いポン） */
 function playDropSound() {
@@ -2098,6 +2152,7 @@ function tutorialGo(delta) {
  *  という2つを一箇所で保証できる。
  * ==========================================================================*/
 function navigateTo(view, extra) {
+  state.cardMenuId = null; // 画面遷移時は長押しメニューを閉じる
   state.view = view;
   if (extra) Object.assign(state, extra);
 
@@ -2360,6 +2415,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
   if (action === "set-tab") {
     state.tab = el.dataset.tab;
     state.view = "home";
+    state.cardMenuId = null;
     state.search = { open: false, query: "", theme: null };
     persistDraft(); render(); return;
   }
@@ -2397,6 +2453,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
       const cancelAction = el.dataset.cancelAction;
       if (cancelAction === "notice-delete-cancel") { state.noticeDeleteTargetId = null; render(); }
       else if (cancelAction === "category-delete-cancel") { state.categoryDraft = { mode: "idle", key: null, label: "" }; render(); }
+      else if (cancelAction === "card-menu-cancel") { state.cardMenuId = null; render(); }
     }
     return;
   }
@@ -2625,7 +2682,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
   }
 
   // 未達成「気づき」カードの削除（確認モーダル付き）
-  if (action === "notice-ask-delete") { state.noticeDeleteTargetId = el.dataset.id; render(); return; }
+  if (action === "notice-ask-delete") { state.cardMenuId = null; state.noticeDeleteTargetId = el.dataset.id; render(); return; }
   if (action === "notice-delete-cancel") { state.noticeDeleteTargetId = null; render(); return; }
   if (action === "notice-delete-confirm") {
     if (state.noticeDeleteTargetId) removeEntry(state.noticeDeleteTargetId);
@@ -2633,6 +2690,9 @@ document.getElementById("root").addEventListener("click", (ev) => {
     render();
     return;
   }
+
+  // 未達成カードの長押しアクションメニューを閉じる
+  if (action === "card-menu-cancel") { state.cardMenuId = null; render(); return; }
 
   // 一覧→詳細（「モクホ」タブ：完了済み記録をタップでいつでも深掘り）
   if (action === "open-detail-home" || action === "open-detail-day") {
