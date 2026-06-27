@@ -1,4 +1,4 @@
-/* mokuho style.css — updated 2026-06-27b / 追加: カード並べ替え＋カテゴリピッカー＋未達成カード本文拡大＆長押しアクションシート(カテゴリ設定対応) */
+/* mokuho style.css — updated 2026-06-27c / 追加: カード並べ替え＋カテゴリピッカー＋未達成カード本文拡大＆長押しアクションシート(カテゴリ設定対応) */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; font-weight: 700; }
 button { font-family: inherit; font-weight: 700; cursor: pointer; }
@@ -489,3 +489,13 @@ body.is-sorting { overflow: hidden; touch-action: none; }
 .card-action-sheet .sheet-section-label { font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
   color: var(--fgMuted); margin-top: 2px; }
 .card-action-sheet .category-picker { margin-top: 0; }
+
+/* 未達成タブの「カテゴリで絞り込み」フィルタボタン */
+.category-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.category-filter button { 
+  padding: 6px 12px; border-radius: 999px; border: 1px solid var(--borderMuted);
+  background: transparent; color: var(--fg); font-size: 12px; font-weight: 700;
+  touch-action: manipulation; transition: all 0.12s;
+}
+.category-filter button.active { background: var(--noticeMain); color: #fff; border-color: var(--noticeMain); }
+.section-label { font-size: 12px; font-weight: 800; letter-spacing: 0.02em; color: var(--fgMuted); }

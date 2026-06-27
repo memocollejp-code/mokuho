@@ -1,4 +1,4 @@
-/* mokuho app.js — updated 2026-06-27b / 追加: カテゴリ分け＋カード並べ替え＋未達成カード本文拡大＆長押しメニュー(カテゴリ設定/思考/削除) */
+/* mokuho app.js — updated 2026-06-27c / 追加: カテゴリ分け＋カード並べ替え＋未達成カード本文拡大＆長押しメニュー(カテゴリ設定/思考/削除) */
 /* ============================================================================
  *  モクホ（MOKUHO）— 完全オフライン版（Reactなし / バニラJS）
  *
@@ -286,6 +286,7 @@ const state = {
   theme: ThemeStore.load(),     // "light" | "dark"
   soundEnabled: SoundStore.load(), // true | false
   settingsPhase: "menu",        // menu | confirmReset（設定画面内の表示フェーズ）
+  noticeFilter: "all",
   mokuhoFilter: "all",          // 「モクホ」タブの絞り込み（all | favorite | カテゴリkey）
   formDraft: { notice: "", insight: "", action: "", category: "" },
   formIndex: 0,
@@ -329,7 +330,9 @@ function isEntryComplete(entry) {
 
 /* 表示中エントリの抽出（render と並べ替えで同じ条件を使うため共通化） */
 function visibleNoticeEntries() {
-  return state.entries.filter((e) => !isEntryComplete(e));
+  const all = state.entries.filter((e) => !isEntryComplete(e));
+  const filter = state.noticeFilter || "all";
+  return filter === "all" ? all : all.filter((e) => e.category === filter);
 }
 function visibleMokuhoEntries() {
   const all = state.entries.filter((e) => isEntryComplete(e));
@@ -475,6 +478,7 @@ function renderHome() {
    ボタンを押さずすぐに書き始められるようにしている。 */
 function renderNoticeHome() {
   const visible = visibleNoticeEntries();
+  const filter = state.noticeFilter || "all";
 
   const noticeStep = STEPS[0]; // key: "notice"
   const noticeValue = state.formDraft.notice;
@@ -538,6 +542,15 @@ function renderNoticeHome() {
     <div class="fade-in" style="margin-top:12px;display:flex;flex-direction:column;flex:1;">
       ${homeNoticeForm}
       <div style="margin-top:24px;">
+        <div style="padding:14px 16px 0;">
+          <div class="section-label">${icon("listChecks", "icon-sm")} カテゴリで絞り込み（任意）</div>
+          <div class="category-filter" style="margin-top:8px;">
+            <button class="${filter === "all" ? "active" : ""}" data-action="set-notice-filter" data-filter="all">すべて</button>
+            ${CATEGORIES.map((c) => `<button class="${filter === c.key ? "active" : ""}" data-action="set-notice-filter" data-filter="${c.key}">${escapeHtml(c.label)}</button>`).join("")}
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
         ${renderSectionDivider({ iconName: "listChecks", title: "未達成の気づき", searchTheme: "notice" })}
         ${renderSearchBar("notice")}
         <div style="padding:16px 0;">${renderEntryList(visible, "continue-notice", "notice")}</div>
@@ -2425,6 +2438,7 @@ document.getElementById("root").addEventListener("click", (ev) => {
     state.search = { open: false, query: "", theme: null };
     persistDraft(); render(); return;
   }
+  if (action === "set-notice-filter") { state.noticeFilter = el.dataset.filter; render(); return; }
   if (action === "set-mokuho-filter") { state.mokuhoFilter = el.dataset.filter; render(); return; }
   if (action === "goto") { navigateTo(el.dataset.view); return; }
 
