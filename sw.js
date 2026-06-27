@@ -1,64 +1,97 @@
-/* Kaokoko Service Worker
-   GitHubでファイルを更新したら、次に開いたときにすぐ新しい内容が反映されるようにしています。
+/* ============================================================================
+ *  モクホ Service Worker（更新反映を強化した版）
+ *
+ *  方針：
+ *   - install 時は {cache:"reload"} でHTTPキャッシュを迂回し、常に最新バイトを
+ *     CACHE_NAME に取り込む（古い app.js を掴む事故を防ぐ）。
+ *   - HTML（ナビゲーション）は「ネットワーク優先 → 失敗時キャッシュ」。
+ *     これで index.html は常に最新を取りに行き、SW更新の検知も働きやすい。
+ *   - app.js / style.css / 画像は Cache First（CACHE_NAME が変われば新版を取得済み）。
+ *   - skipWaiting + clients.claim で新SWを即時有効化。
+ *
+ *  ※ CACHE_NAME は GitHub Actions が push 時に日時へ自動書き換えします。
+ *    下の CACHE_NAME を定義している1行（この書式）は変更しないでください。
+ *    ワークフローの sed がその1行だけを置換します。
+ * ==========================================================================*/
 
-   方式：「ネットワーク優先」
-   - オンライン時：必ず最新のファイルを取得しに行く（＝更新がすぐ反映される）
-   - オフライン時：直前にキャッシュした内容を表示する（＝オフラインでも開ける）
+const CACHE_NAME = "mokuho-v1";
 
-   CACHE_NAME はファイル整理用のラベルです。手動で番号を上げる必要はありませんが、
-   大きな変更をしたときの目印として上げておくと管理しやすくなります。
-*/
-const CACHE_NAME = "mokuho-20260627-040727";
-
-const APP_SHELL = [
+// インストール時にキャッシュするファイル一覧
+const ASSETS = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./manifest.json",
-  "./icon-192.png",
   "./icon.png",
-  "./icon-180.png"
+  "./icon-180.png",
+  "./icon-192.png",
 ];
 
-/* インストール時：アプリシェルを一括キャッシュ（オフライン用の初期データ） */
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+// ── install：全アセットを“最新バイトで”事前キャッシュ ──────────────────────
+self.addEventListener("install", (ev) => {
+  ev.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    await Promise.all(ASSETS.map(async (url) => {
+      try {
+        // {cache:"reload"} でブラウザのHTTPキャッシュを使わず、必ず取得し直す
+        const res = await fetch(new Request(url, { cache: "reload" }));
+        if (res && res.ok) await cache.put(url, res);
+      } catch (e) {
+        // アイコン欠けなどの取得失敗は致命ではないので無視（installは継続）
+      }
+    }));
+    await self.skipWaiting();
+  })());
 });
 
-/* 有効化時：古いバージョンのキャッシュを削除し、すぐにこのSWに切り替える */
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => key !== CACHE_NAME)
-          .map((key) => caches.delete(key))
-      )
-    ).then(() => self.clients.claim())
-  );
+// ── activate：古いキャッシュを削除 ───────────────────────────────────────
+self.addEventListener("activate", (ev) => {
+  ev.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(
+      keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+    );
+    await self.clients.claim();
+  })());
 });
 
-/* リクエスト時：ネットワーク優先。取れた最新版は次回オフライン用にキャッシュへ保存。
-   オフラインで取得できない場合のみ、キャッシュ（最後にオンラインだった時点の内容）を使う。 */
-self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
+// ── fetch ────────────────────────────────────────────────────────────────
+self.addEventListener("fetch", (ev) => {
+  // http(s) 以外（chrome-extension:// 等）はスルー
+  if (!ev.request.url.startsWith("http")) return;
 
-  event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        if (response && response.status === 200) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+  // HTML（ページ遷移）はネットワーク優先 → 失敗時のみキャッシュ（オフライン対応）
+  if (ev.request.mode === "navigate") {
+    ev.respondWith((async () => {
+      try {
+        const fresh = await fetch(ev.request);
+        const cache = await caches.open(CACHE_NAME);
+        cache.put(ev.request, fresh.clone());
+        return fresh;
+      } catch (e) {
+        return (
+          (await caches.match(ev.request)) ||
+          (await caches.match("./index.html")) ||
+          Response.error()
+        );
+      }
+    })());
+    return;
+  }
+
+  // それ以外（app.js / style.css / 画像など）は Cache First
+  ev.respondWith(
+    caches.match(ev.request).then((cached) => {
+      if (cached) return cached;
+      return fetch(ev.request).then((response) => {
+        if (!response || response.status !== 200 || response.type === "opaque") {
+          return response;
         }
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(ev.request, clone));
         return response;
-      })
-      .catch(() =>
-        caches.match(event.request).then((cached) => cached || caches.match("./index.html"))
-      )
+      });
+    })
   );
 });
