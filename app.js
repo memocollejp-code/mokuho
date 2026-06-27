@@ -1,4 +1,4 @@
-/* mokuho app.js — updated 2026-06-27 / 追加: カテゴリ分け＋カード並べ替え＋未達成カードの本文拡大＆長押しメニュー(思考/削除) */
+/* mokuho app.js — updated 2026-06-27b / 追加: カテゴリ分け＋カード並べ替え＋未達成カード本文拡大＆長押しメニュー(カテゴリ設定/思考/削除) */
 /* ============================================================================
  *  モクホ（MOKUHO）— 完全オフライン版（Reactなし / バニラJS）
  *
@@ -520,6 +520,12 @@ function renderNoticeHome() {
     <div class="modal-overlay" data-action="modal-overlay-cancel" data-cancel-action="card-menu-cancel">
       <div class="modal-card card-action-sheet">
         <div class="sheet-title">${escapeHtml(t)}</div>
+        <div class="sheet-section-label">カテゴリ</div>
+        <div class="category-picker">
+          <button class="${!(e.category || "") ? "active" : ""}" data-action="card-set-category" data-id="${e.id}" data-category="">未設定</button>
+          ${CATEGORIES.map((c) => `<button class="${(e.category || "") === c.key ? "active" : ""}" data-action="card-set-category" data-id="${e.id}" data-category="${c.key}">${escapeHtml(c.label)}</button>`).join("")}
+        </div>
+        <div class="sheet-section-label">操作</div>
         <button class="btn btn-notice" data-action="start-thinking-from-card" data-id="${e.id}">${icon("timer", "icon-sm")} 思考モード</button>
         <button class="btn" style="background:#d9534f;color:#fff;border-color:#d9534f;" data-action="notice-ask-delete" data-id="${e.id}">${icon("trash2", "icon-sm")} 削除</button>
         <button class="btn btn-outline-mokuho" data-action="card-menu-cancel">閉じる</button>
@@ -2693,6 +2699,8 @@ document.getElementById("root").addEventListener("click", (ev) => {
 
   // 未達成カードの長押しアクションメニューを閉じる
   if (action === "card-menu-cancel") { state.cardMenuId = null; render(); return; }
+  // 長押しメニューからカテゴリを直接設定（既存・新規どちらの未達成カードにも適用）
+  if (action === "card-set-category") { updateEntry(el.dataset.id, { category: el.dataset.category }); render(); return; }
 
   // 一覧→詳細（「モクホ」タブ：完了済み記録をタップでいつでも深掘り）
   if (action === "open-detail-home" || action === "open-detail-day") {

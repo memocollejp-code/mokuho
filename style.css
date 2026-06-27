@@ -1,4 +1,4 @@
-/* mokuho style.css — updated 2026-06-27 / 追加: カード並べ替え＋カテゴリピッカー＋未達成カード本文拡大＆長押しアクションシート */
+/* mokuho style.css — updated 2026-06-27b / 追加: カード並べ替え＋カテゴリピッカー＋未達成カード本文拡大＆長押しアクションシート(カテゴリ設定対応) */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; font-family: -apple-system, "Hiragino Sans", "Yu Gothic", sans-serif; font-weight: 700; }
 button { font-family: inherit; font-weight: 700; cursor: pointer; }
@@ -484,3 +484,8 @@ body.is-sorting { overflow: hidden; touch-action: none; }
 .card-action-sheet .sheet-title { font-weight: 800; font-size: 14px; color: var(--fg); line-height: 1.5;
   margin: 0 0 2px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .card-action-sheet .btn { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+
+/* 長押しアクションシート内：セクション見出し */
+.card-action-sheet .sheet-section-label { font-size: 11px; font-weight: 800; letter-spacing: 0.04em;
+  color: var(--fgMuted); margin-top: 2px; }
+.card-action-sheet .category-picker { margin-top: 0; }
