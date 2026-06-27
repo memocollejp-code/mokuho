@@ -1,31 +1,28 @@
 {
-  "name": "モクホ MOKUHO",
-  "short_name": "モクホ",
-  "description": "気づきを一歩に変える、完全オフライン思考整理アプリ",
+  "id": "./",
+  "name": "Kaokoko — ねむりとこころの記録",
+  "short_name": "Kaokoko",
+  "description": "睡眠時間とこころのバランスを、毎日かんたんに記録するセルフケア日記アプリ",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#fffdfb",
-  "theme_color": "#fffdfb",
+  "background_color": "#211a16",
+  "theme_color": "#211a16",
   "lang": "ja",
   "icons": [
     {
-      "src": "./icon-192.png",
+      "src": "icons/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "./icon-180.png",
-      "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "./icon.png",
+      "src": "icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
+
