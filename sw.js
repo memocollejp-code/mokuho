@@ -8,7 +8,7 @@
    CACHE_NAME はファイル整理用のラベルです。手動で番号を上げる必要はありませんが、
    大きな変更をしたときの目印として上げておくと管理しやすくなります。
 */
-const CACHE_NAME = "kaokoko-cache-v2";
+const CACHE_NAME = "mokuho-20260627-002915";
 
 const APP_SHELL = [
   "./",
