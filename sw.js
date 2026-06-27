@@ -8,7 +8,7 @@
    CACHE_NAME はファイル整理用のラベルです。手動で番号を上げる必要はありませんが、
    大きな変更をしたときの目印として上げておくと管理しやすくなります。
 */
-const CACHE_NAME = "mokuho-20260627-002915";
+const CACHE_NAME = "kaokoko-cache-v3";
 
 const APP_SHELL = [
   "./",
@@ -16,9 +16,9 @@ const APP_SHELL = [
   "./style.css",
   "./app.js",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-  "./icons/apple-touch-icon.png"
+  "./icon-192.png",
+  "./icon.png",
+  "./icon-180.png"
 ];
 
 /* インストール時：アプリシェルを一括キャッシュ（オフライン用の初期データ） */
